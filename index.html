@@ -731,6 +731,7 @@ window.judge = async (result) => {
   // ローカルの allCards も即時更新（一覧表示に反映させるため）
   const local = allCards.find(c=>c.id===card.id);
   if (local) { local.score=score; local.nextDate=nextDate; }
+  updateStats();
   quizIndex++; loadQuestion();
 };
 
@@ -757,6 +758,7 @@ function autoFail(){
   // ローカルの allCards も即時更新
   const local = allCards.find(c=>c.id===card.id);
   if (local) { local.score=0; local.nextDate=nextDate; }
+  updateStats();
   quizIndex++; loadQuestion();
 }
 
