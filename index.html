@@ -728,6 +728,9 @@ window.judge = async (result) => {
   }
   try { await updateDoc(doc(db,`users/${currentUser.uid}/cards/${card.id}`),{nextDate,score,updatedAt:Timestamp.now()}); }
   catch(e){ console.warn(e); }
+  // ローカルの allCards も即時更新（一覧表示に反映させるため）
+  const local = allCards.find(c=>c.id===card.id);
+  if (local) { local.score=score; local.nextDate=nextDate; }
   quizIndex++; loadQuestion();
 };
 
@@ -749,7 +752,11 @@ function autoFail(){
   const card=quizCards[quizIndex];
   quizResults.push({card,result:'bad'});
   const today=new Date(); today.setHours(0,0,0,0);
-  updateDoc(doc(db,`users/${currentUser.uid}/cards/${card.id}`),{nextDate:Timestamp.fromDate(today),score:0,updatedAt:Timestamp.now()}).catch(()=>{});
+  const nextDate=Timestamp.fromDate(today);
+  updateDoc(doc(db,`users/${currentUser.uid}/cards/${card.id}`),{nextDate,score:0,updatedAt:Timestamp.now()}).catch(()=>{});
+  // ローカルの allCards も即時更新
+  const local = allCards.find(c=>c.id===card.id);
+  if (local) { local.score=0; local.nextDate=nextDate; }
   quizIndex++; loadQuestion();
 }
 
