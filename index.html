@@ -330,6 +330,11 @@ select.input{cursor:pointer;}
       <div class="home-btn-label">カード確認</div>
       <div class="home-btn-sub">一覧・編集</div>
     </button>
+    <button class="home-btn" onclick="openSettings()">
+      <span class="home-btn-icon">⚙️</span>
+      <div class="home-btn-label">設定</div>
+      <div class="home-btn-sub">書き出し・読み込み</div>
+    </button>
   </div>
 </div>
 
@@ -455,6 +460,28 @@ select.input{cursor:pointer;}
     <div class="sort-chip" data-sort="az" onclick="setSort('az')">🔤 A→Z</div>
   </div>
   <div class="card-list" id="card-list-view"></div>
+</div>
+
+<!-- ══ SETTINGS ══ -->
+<div class="screen" id="screen-settings">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div class="section-title">設定</div>
+    <button class="btn btn-ghost" style="padding:6px 10px;font-size:13px" onclick="showScreen('screen-home')">← 戻る</button>
+  </div>
+
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600;font-size:15px">📤 単語データを書き出す</div>
+    <div class="text-small">登録済みの単語をJSONファイルとして端末に保存します。バックアップや他の端末への移行に使えます。</div>
+    <button class="btn btn-primary btn-full" onclick="exportCards()">📤 JSONファイルを書き出す</button>
+  </div>
+
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600;font-size:15px">📥 単語データを読み込む</div>
+    <div class="text-small">書き出したJSONファイルを選択すると、単語を追加します（既存のデータは削除されません）。</div>
+    <input type="file" id="import-file-input" accept="application/json,.json" style="display:none" onchange="importCardsFromFile(event)">
+    <button class="btn btn-outline btn-full" onclick="document.getElementById('import-file-input').click()">📥 JSONファイルを選ぶ</button>
+    <div id="import-result"></div>
+  </div>
 </div>
 
 </div><!-- /app -->
@@ -930,6 +957,73 @@ window.toggleCliMemo = (id, btn) => {
   const open = el.style.display === 'none' || el.style.display === '';
   el.style.display = open ? 'block' : 'none';
   btn.textContent = open ? '📝 メモを閉じる' : '📝 メモを見る';
+};
+
+// ── 設定画面 ──
+window.openSettings = () => {
+  document.getElementById('import-result').innerHTML = '';
+  showScreen('screen-settings');
+};
+
+// ── 書き出し ──
+window.exportCards = () => {
+  if (!allCards.length) { alert('書き出せる単語がありません。'); return; }
+  const data = allCards.map(c => ({
+    front: c.front,
+    back: c.back,
+    memo: c.memo || '',
+    group: c.group || '未分類',
+    score: c.score || 0,
+    createdAt: c.createdAt ? c.createdAt.toDate().toISOString() : new Date().toISOString(),
+    nextDate: c.nextDate ? c.nextDate.toDate().toISOString() : new Date().toISOString()
+  }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `wordbook_${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+// ── 読み込み ──
+window.importCardsFromFile = async (event) => {
+  const file = event.target.files[0];
+  const resultEl = document.getElementById('import-result');
+  resultEl.innerHTML = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const json = JSON.parse(text);
+    if (!Array.isArray(json)) throw new Error('JSONの形式が正しくありません（配列である必要があります）');
+    let okCount = 0, ngCount = 0;
+    for (const item of json) {
+      const front = (item.front||'').toString().trim();
+      const back  = (item.back||'').toString().trim();
+      if (!front || !back) { ngCount++; continue; }
+      const createdAt = item.createdAt ? Timestamp.fromDate(new Date(item.createdAt)) : Timestamp.now();
+      const nextDate  = item.nextDate  ? Timestamp.fromDate(new Date(item.nextDate))  : Timestamp.fromDate(new Date());
+      try {
+        await addDoc(cardsRef(), {
+          front, back,
+          memo: (item.memo||'').toString(),
+          group: (item.group||'未分類').toString(),
+          score: Number.isFinite(item.score) ? item.score : 0,
+          createdAt, updatedAt: Timestamp.now(), nextDate
+        });
+        okCount++;
+      } catch(e) { ngCount++; }
+    }
+    await loadCards();
+    resultEl.innerHTML = `<div class="alert" style="background:var(--good-bg);color:var(--good);margin-top:4px">✅ ${okCount}件を読み込みました${ngCount?`（${ngCount}件はスキップされました）`:''}</div>`;
+  } catch(e) {
+    resultEl.innerHTML = `<div class="alert alert-error" style="margin-top:4px">読み込みに失敗しました: ${e.message}</div>`;
+  } finally {
+    event.target.value = '';
+  }
 };
 </script>
 </body>
