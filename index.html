@@ -265,6 +265,7 @@ select.input{cursor:pointer;}
       <div style="display:flex;flex-direction:column;gap:12px">
         <div class="input-group"><div class="label">メールアドレス</div><input class="input" id="login-email" type="email" placeholder="you@example.com"></div>
         <div class="input-group"><div class="label">パスワード</div><input class="input" id="login-pass" type="password" placeholder="••••••••"></div>
+        <div style="text-align:right"><span class="text-small" style="cursor:pointer;text-decoration:underline" onclick="sendResetFromLogin()">パスワードをお忘れですか？</span></div>
         <div id="login-error"></div>
         <button class="btn btn-primary btn-full" id="btn-do-login" onclick="doLogin()">ログイン</button>
       </div>
@@ -482,13 +483,39 @@ select.input{cursor:pointer;}
     <button class="btn btn-outline btn-full" onclick="document.getElementById('import-file-input').click()">📥 JSONファイルを選ぶ</button>
     <div id="import-result"></div>
   </div>
+
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600;font-size:15px">📧 メールアドレスを変更する</div>
+    <div class="text-small">確認のため、現在のパスワードの入力が必要です。</div>
+    <div class="input-group"><div class="label">現在のパスワード</div><input class="input" id="settings-email-curpass" type="password" placeholder="••••••••"></div>
+    <div class="input-group"><div class="label">新しいメールアドレス</div><input class="input" id="settings-new-email" type="email" placeholder="new@example.com"></div>
+    <div id="settings-email-msg"></div>
+    <button class="btn btn-primary btn-full" id="btn-change-email" onclick="changeEmail()">📧 メールアドレスを変更</button>
+  </div>
+
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600;font-size:15px">🔑 パスワードを変更する</div>
+    <div class="text-small">確認のため、現在のパスワードの入力が必要です。</div>
+    <div class="input-group"><div class="label">現在のパスワード</div><input class="input" id="settings-pass-curpass" type="password" placeholder="••••••••"></div>
+    <div class="input-group"><div class="label">新しいパスワード（6文字以上）</div><input class="input" id="settings-new-pass" type="password" placeholder="••••••••"></div>
+    <div class="input-group"><div class="label">新しいパスワード（確認）</div><input class="input" id="settings-new-pass2" type="password" placeholder="••••••••"></div>
+    <div id="settings-pass-msg"></div>
+    <button class="btn btn-primary btn-full" id="btn-change-pass" onclick="changePassword()">🔑 パスワードを変更</button>
+  </div>
+
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600;font-size:15px">✉️ パスワードリセットメールを送る</div>
+    <div class="text-small">現在ログイン中のメールアドレス宛てに、パスワード再設定用のメールを送ります。</div>
+    <div id="settings-reset-msg"></div>
+    <button class="btn btn-outline btn-full" onclick="sendResetFromSettings()">✉️ リセットメールを送る</button>
+  </div>
 </div>
 
 </div><!-- /app -->
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updateEmail, updatePassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -561,7 +588,7 @@ window.doRegister = async () => {
 };
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 function authMsg(c) {
-  return {'auth/user-not-found':'ユーザーが見つかりません','auth/wrong-password':'パスワードが違います','auth/invalid-email':'メールアドレスの形式が正しくありません','auth/email-already-in-use':'このアドレスは既に使用中です','auth/weak-password':'パスワードは6文字以上','auth/invalid-credential':'メールアドレスまたはパスワードが間違っています'}[c] || `エラー: ${c}`;
+  return {'auth/user-not-found':'ユーザーが見つかりません','auth/wrong-password':'パスワードが違います','auth/invalid-email':'メールアドレスの形式が正しくありません','auth/email-already-in-use':'このアドレスは既に使用中です','auth/weak-password':'パスワードは6文字以上','auth/invalid-credential':'メールアドレスまたはパスワードが間違っています','auth/requires-recent-login':'セキュリティのため再ログインが必要です。一度ログアウトしてから再度お試しください','auth/too-many-requests':'試行回数が多すぎます。しばらくしてからお試しください'}[c] || `エラー: ${c}`;
 }
 window.switchTab = (m) => {
   document.getElementById('tab-login').classList.toggle('active', m==='login');
@@ -962,7 +989,88 @@ window.toggleCliMemo = (id, btn) => {
 // ── 設定画面 ──
 window.openSettings = () => {
   document.getElementById('import-result').innerHTML = '';
+  document.getElementById('settings-email-msg').innerHTML = '';
+  document.getElementById('settings-pass-msg').innerHTML = '';
+  document.getElementById('settings-reset-msg').innerHTML = '';
+  ['settings-email-curpass','settings-new-email','settings-pass-curpass','settings-new-pass','settings-new-pass2'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
   showScreen('screen-settings');
+};
+
+// ── パスワードリセット(ログイン画面から) ──
+window.sendResetFromLogin = async () => {
+  const email = document.getElementById('login-email').value.trim();
+  const errEl = document.getElementById('login-error');
+  if (!email) { errEl.innerHTML = '<div class="alert alert-error">メールアドレスを入力してください</div>'; return; }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    errEl.innerHTML = '<div class="alert" style="background:var(--good-bg);color:var(--good)">📧 リセットメールを送信しました。受信箱をご確認ください</div>';
+  } catch(e) {
+    errEl.innerHTML = `<div class="alert alert-error">${authMsg(e.code)}</div>`;
+  }
+};
+
+// ── パスワードリセット(設定画面から・ログイン中) ──
+window.sendResetFromSettings = async () => {
+  const msgEl = document.getElementById('settings-reset-msg');
+  msgEl.innerHTML = '';
+  if (!currentUser) return;
+  try {
+    await sendPasswordResetEmail(auth, currentUser.email);
+    msgEl.innerHTML = `<div class="alert" style="background:var(--good-bg);color:var(--good)">📧 ${esc(currentUser.email)} 宛にリセットメールを送信しました</div>`;
+  } catch(e) {
+    msgEl.innerHTML = `<div class="alert alert-error">送信に失敗しました: ${authMsg(e.code)}</div>`;
+  }
+};
+
+// ── メールアドレス変更 ──
+window.changeEmail = async () => {
+  const curPass = document.getElementById('settings-email-curpass').value;
+  const newEmail = document.getElementById('settings-new-email').value.trim();
+  const msgEl = document.getElementById('settings-email-msg');
+  msgEl.innerHTML = '';
+  if (!curPass || !newEmail) { msgEl.innerHTML = '<div class="alert alert-error">現在のパスワードと新しいメールアドレスを入力してください</div>'; return; }
+  const btn = document.getElementById('btn-change-email');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const cred = EmailAuthProvider.credential(currentUser.email, curPass);
+    await reauthenticateWithCredential(currentUser, cred);
+    await updateEmail(currentUser, newEmail);
+    document.getElementById('header-email').textContent = newEmail.split('@')[0];
+    document.getElementById('settings-email-curpass').value = '';
+    document.getElementById('settings-new-email').value = '';
+    msgEl.innerHTML = '<div class="alert" style="background:var(--good-bg);color:var(--good)">✅ メールアドレスを変更しました</div>';
+  } catch(e) {
+    msgEl.innerHTML = `<div class="alert alert-error">${authMsg(e.code)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '📧 メールアドレスを変更';
+  }
+};
+
+// ── パスワード変更 ──
+window.changePassword = async () => {
+  const curPass = document.getElementById('settings-pass-curpass').value;
+  const newPass = document.getElementById('settings-new-pass').value;
+  const newPass2 = document.getElementById('settings-new-pass2').value;
+  const msgEl = document.getElementById('settings-pass-msg');
+  msgEl.innerHTML = '';
+  if (!curPass || !newPass || !newPass2) { msgEl.innerHTML = '<div class="alert alert-error">すべての項目を入力してください</div>'; return; }
+  if (newPass.length < 6) { msgEl.innerHTML = '<div class="alert alert-error">新しいパスワードは6文字以上にしてください</div>'; return; }
+  if (newPass !== newPass2) { msgEl.innerHTML = '<div class="alert alert-error">新しいパスワードが一致しません</div>'; return; }
+  const btn = document.getElementById('btn-change-pass');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const cred = EmailAuthProvider.credential(currentUser.email, curPass);
+    await reauthenticateWithCredential(currentUser, cred);
+    await updatePassword(currentUser, newPass);
+    ['settings-pass-curpass','settings-new-pass','settings-new-pass2'].forEach(id=>document.getElementById(id).value='');
+    msgEl.innerHTML = '<div class="alert" style="background:var(--good-bg);color:var(--good)">✅ パスワードを変更しました</div>';
+  } catch(e) {
+    msgEl.innerHTML = `<div class="alert alert-error">${authMsg(e.code)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔑 パスワードを変更';
+  }
 };
 
 // ── 書き出し ──
